@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0b0f14" />
+  <title>Goalkeeper Timer</title>
+
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Goalkeeper Timer" />
+  <meta name="format-detection" content="telephone=no" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app" role="main">
+    <header class="topbar">
+      <h1 class="brand">
+        <span class="dot" aria-hidden="true"></span>
+        Goalkeeper Timer
+      </h1>
+      <div class="header-actions">
+        <button id="langBtn" class="lang-btn" title="Język / Language" aria-label="Zmień język">
+          <span id="langLabel">PL</span>
+        </button>
+        <button id="focusBtn" class="mode-btn" title="Przełącz tryb" aria-label="Przełącz tryb">
+          <svg class="icon-expand" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path fill="currentColor" d="M4 4h6v2H6v4H4V4Zm10 0h6v6h-2V6h-4V4ZM4 14h2v4h4v2H4v-6Zm14 0h2v6h-6v-2h4v-4Z"/>
+          </svg>
+          <svg class="icon-shrink" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path fill="currentColor" d="M9 4h2v6H5V8h4V4Zm4 0h2v4h4v2h-6V4ZM5 14h6v6H9v-4H5v-2Zm8 0h6v2h-4v4h-2v-6Z"/>
+          </svg>
+          <span class="mode-label-slot slot-enter">
+            <span class="mode-label" data-i18n="modeGame">Gra</span>
+            <span class="mode-label mode-ghost" aria-hidden="true">Game</span>
+          </span>
+          <span class="mode-label-slot slot-exit">
+            <span class="mode-label" data-i18n="modeSettings">Ustawienia</span>
+            <span class="mode-label mode-ghost" aria-hidden="true">Ustawienia</span>
+          </span>
+        </button>
+      </div>
+    </header>
+
+    <section class="timer-card" aria-label="Timer">
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 200 200" aria-hidden="true">
+          <circle class="ring-track" cx="100" cy="100" r="92" />
+          <circle id="ringProgress" class="ring-progress" cx="100" cy="100" r="92" />
+        </svg>
+        <div class="ring-center">
+          <div id="time" class="time" aria-live="polite">05:00</div>
+          <div id="statusLabel" class="status">Gotowe</div>
+          <div class="rotation"><span data-i18n="labelRotation">Zmiana</span> #<span id="rotationCount">0</span></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="startPauseBtn" class="btn btn-primary" aria-label="Start / Pauza">
+          <span id="startPauseLabel">Start</span>
+        </button>
+        <button id="resetBtn" class="btn btn-secondary" aria-label="Reset">
+          <span data-i18n="btnReset">Reset</span>
+        </button>
+        <button id="nextBtn" class="btn btn-secondary" aria-label="Następna zmiana">
+          <span data-i18n="btnNext">Następna zmiana</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="settings" aria-label="Ustawienia">
+      <div class="row">
+        <label for="minutesInput" data-i18n="labelDuration">Czas zmiany</label>
+        <div class="mmss">
+          <input id="minutesInput" type="number" min="0" max="60" step="1" value="5" inputmode="numeric" />
+          <span data-i18n="unitMin">min</span>
+          <input id="secondsInput" type="number" min="0" max="59" step="1" value="0" inputmode="numeric" />
+          <span data-i18n="unitSec">sek</span>
+        </div>
+      </div>
+
+      <div class="presets" role="group" aria-label="Szybkie ustawienia">
+        <button class="chip" data-preset="120">2:00</button>
+        <button class="chip" data-preset="180">3:00</button>
+        <button class="chip" data-preset="300">5:00</button>
+        <button class="chip" data-preset="420">7:00</button>
+        <button class="chip" data-preset="600">10:00</button>
+      </div>
+
+      <div class="row">
+        <label for="warnInput" data-i18n="labelWarning">Sygnał dźwiękowy przed końcem</label>
+        <div class="mmss">
+          <input id="warnInput" type="number" min="1" max="30" step="1" value="5" inputmode="numeric" />
+          <span data-i18n="unitSec">sek</span>
+        </div>
+      </div>
+
+      <div class="row">
+        <label for="soundSelect" data-i18n="labelSoundType">Rodzaj dźwięku</label>
+        <div class="mmss">
+          <select id="soundSelect" class="select">
+            <option value="alarm" data-i18n="soundAlarm">Alarm</option>
+            <option value="whistle" data-i18n="soundWhistle">Gwizdek</option>
+            <option value="siren" data-i18n="soundSiren">Syrena</option>
+          </select>
+          <button id="testSoundBtn" class="chip play" title="Odtwórz dźwięk">
+            <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+              <path fill="currentColor" d="M8 5.5v13a1 1 0 0 0 1.53.848l10-6.5a1 1 0 0 0 0-1.696l-10-6.5A1 1 0 0 0 8 5.5Z"/>
+            </svg>
+            <span data-i18n="btnPlaySound">Odtwórz dźwięk</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="row switches">
+        <label class="switch">
+          <input id="autoRestart" type="checkbox" checked />
+          <span data-i18n="labelAutoRestart">Auto-restart po zmianie</span>
+        </label>
+        <label class="switch">
+          <input id="vibrate" type="checkbox" checked />
+          <span data-i18n="labelVibration">Wibracje (mobile)</span>
+        </label>
+        <label class="switch">
+          <input id="wakeLock" type="checkbox" checked />
+          <span data-i18n="labelWakeLock">Nie usypiaj ekranu</span>
+        </label>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <span>© <span id="copyYear"></span> Damian Dąbrowski</span>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
