@@ -1,9 +1,10 @@
-const CACHE = 'gk-timer-v17';
+const CACHE = 'gk-timer-v33';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './firebase-config.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -30,6 +31,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  // Let cross-origin requests (Firebase SDK from gstatic, RTDB WebSocket etc.)
+  // pass straight through without touching the cache.
+  if (url.origin !== self.location.origin) return;
   event.respondWith(
     caches.match(req).then((cached) => {
       const network = fetch(req)

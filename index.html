@@ -17,6 +17,11 @@
   <meta name="format-detection" content="telephone=no" />
 
   <link rel="stylesheet" href="styles.css" />
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" defer></script>
+  <script src="firebase-config.js" defer></script>
 </head>
 <body>
   <main class="app" role="main">
@@ -26,6 +31,13 @@
         Goalkeeper Timer
       </h1>
       <div class="header-actions">
+        <span id="modeBadge" class="mode-badge">
+          <span class="pulse-dot" aria-hidden="true"></span>
+          <span class="badge-label-slot">
+            <span id="modeBadgeText">Lokalny</span>
+            <span class="mode-ghost" aria-hidden="true">Lokalny</span>
+          </span>
+        </span>
         <button id="langBtn" class="lang-btn" title="Język / Language" aria-label="Zmień język">
           <span id="langLabel">PL</span>
         </button>
@@ -76,6 +88,49 @@
 
     <section class="settings" aria-label="Ustawienia">
       <div class="row">
+        <label data-i18n="labelMode">Tryb</label>
+        <div class="mode-buttons">
+          <button class="mode-chip" data-mode="local">
+            <span data-i18n="modeLocal">Lokalny</span>
+          </button>
+          <button class="mode-chip" data-mode="host">
+            <span data-i18n="modeHost">Host</span>
+          </button>
+          <button class="mode-chip" data-mode="client">
+            <span data-i18n="modeClient">Klient</span>
+          </button>
+          <span class="info-tooltip" tabindex="0" aria-label="Opis trybu">
+            <svg class="info-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1 5.5h2v2h-2v-2Zm0 4h2v7h-2v-7Z"/>
+            </svg>
+            <div class="tooltip-panel" role="tooltip">
+              <div class="tp-row"><span class="tp-name" data-i18n="modeLocal">Lokalny</span><span class="tp-desc" data-i18n="modeLocalHint">Timer działa tylko na tym urządzeniu.</span></div>
+              <div class="tp-row"><span class="tp-name" data-i18n="modeHost">Host</span><span class="tp-desc" data-i18n="modeHostHint">Nadaje stan timera do klientów.</span></div>
+              <div class="tp-row"><span class="tp-name" data-i18n="modeClient">Klient</span><span class="tp-desc" data-i18n="modeClientHint">Widok tylko-do-odczytu timera hosta.</span></div>
+            </div>
+          </span>
+        </div>
+      </div>
+
+      <div id="hostInvite" class="host-invite" hidden>
+        <div class="invite-header">
+          <span class="invite-title" data-i18n="labelInvite">Zaproś klientów</span>
+          <span class="client-count" title="Podłączeni klienci">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path fill="currentColor" d="M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7 0a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm-7 2c-4 0-8 2-8 5v1h12v-1c0-1.3.62-2.55 1.64-3.62C13.3 14.14 11.18 14 9 14Zm7 0c-.68 0-1.35.04-2 .1 1.83 1.17 3 2.75 3 4.9v1h7v-1c0-2.5-4-5-8-5Z"/>
+            </svg>
+            <span id="clientCount">0</span>
+          </span>
+        </div>
+        <p class="invite-hint" data-i18n="inviteHint">Zeskanuj QR aby dołączyć jako klient</p>
+        <div id="qrContainer" class="invite-qr"></div>
+        <div class="invite-url">
+          <input id="inviteUrl" type="text" readonly />
+          <button id="copyUrlBtn" class="btn btn-secondary invite-copy" data-i18n="btnCopy">Kopiuj</button>
+        </div>
+      </div>
+
+      <div class="row">
         <label for="minutesInput" data-i18n="labelDuration">Czas zmiany</label>
         <div class="mmss">
           <input id="minutesInput" type="number" min="0" max="60" step="1" value="5" inputmode="numeric" />
@@ -86,17 +141,17 @@
       </div>
 
       <div class="presets" role="group" aria-label="Szybkie ustawienia">
+        <button class="chip" data-preset="15">0:15</button>
         <button class="chip" data-preset="120">2:00</button>
         <button class="chip" data-preset="180">3:00</button>
         <button class="chip" data-preset="300">5:00</button>
-        <button class="chip" data-preset="420">7:00</button>
-        <button class="chip" data-preset="600">10:00</button>
+        <button class="chip" data-preset="360">6:00</button>
       </div>
 
       <div class="row">
         <label for="warnInput" data-i18n="labelWarning">Sygnał dźwiękowy przed końcem</label>
         <div class="mmss">
-          <input id="warnInput" type="number" min="1" max="30" step="1" value="5" inputmode="numeric" />
+          <input id="warnInput" type="number" min="1" max="30" step="1" value="10" inputmode="numeric" />
           <span data-i18n="unitSec">sek</span>
         </div>
       </div>
@@ -138,6 +193,20 @@
       <span>© <span id="copyYear"></span> Damian Dąbrowski</span>
     </footer>
   </main>
+
+  <div id="passwordModal" class="modal" hidden>
+    <div class="modal-backdrop"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="passwordTitle">
+      <h2 id="passwordTitle" data-i18n="hostPasswordTitle">Hasło hosta</h2>
+      <p class="modal-hint" data-i18n="hostPasswordHint">Podaj hasło, żeby uruchomić tryb Host.</p>
+      <input id="passwordInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <div id="passwordError" class="modal-error" hidden data-i18n="hostPasswordWrong">Nieprawidłowe hasło.</div>
+      <div class="modal-actions">
+        <button id="passwordCancel" class="btn btn-secondary" data-i18n="btnCancel">Anuluj</button>
+        <button id="passwordSubmit" class="btn btn-primary" data-i18n="btnOk">OK</button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
   <script>

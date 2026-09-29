@@ -22,8 +22,24 @@
   const langBtn = $('langBtn');
   const langLabel = $('langLabel');
   const copyYear = $('copyYear');
+  const modeBadge = $('modeBadge');
+  const modeBadgeText = $('modeBadgeText');
+  const passwordModal = $('passwordModal');
+  const passwordInput = $('passwordInput');
+  const passwordError = $('passwordError');
+  const passwordSubmit = $('passwordSubmit');
+  const passwordCancel = $('passwordCancel');
+  const hostInvite = $('hostInvite');
+  const qrContainer = $('qrContainer');
+  const inviteUrl = $('inviteUrl');
+  const copyUrlBtn = $('copyUrlBtn');
+  const clientCountEl = $('clientCount');
   const timerCard = document.querySelector('.timer-card');
   const presetBtns = document.querySelectorAll('.chip[data-preset]');
+  const modeChips = document.querySelectorAll('.mode-chip[data-mode]');
+
+  const HOST_PASSWORD = 'dd';
+  const MODE_KEY = 'gk-timer-mode-v1';
 
   const RING_CIRC = 2 * Math.PI * 92; // 578.05
   ringEl.style.strokeDasharray = String(RING_CIRC);
@@ -31,7 +47,7 @@
   const STORE_KEY = 'gk-timer-settings-v1';
   const defaults = {
     duration: 300,
-    warn: 5,
+    warn: 10,
     autoRestart: true,
     vibrate: true,
     wakeLock: true,
@@ -52,6 +68,7 @@
     wakeLock: null,
     sound: 'alarm',
     lang: 'pl',
+    mode: 'local',
   };
 
   // ---------- i18n ----------
@@ -82,6 +99,25 @@
       soundWhistle: 'Gwizdek',
       soundSiren: 'Syrena',
       titleSuffix: 'Goalkeeper Timer',
+      labelMode: 'Tryb',
+      modeLocal: 'Lokalny',
+      modeHost: 'Host',
+      modeClient: 'Klient',
+      badgeHosting: 'Nadawanie',
+      badgeViewing: 'Podgląd',
+      btnExit: 'Wyjdź',
+      btnCancel: 'Anuluj',
+      btnOk: 'OK',
+      hostPasswordTitle: 'Hasło hosta',
+      hostPasswordHint: 'Podaj hasło, żeby uruchomić tryb Host.',
+      hostPasswordWrong: 'Nieprawidłowe hasło.',
+      modeLocalHint: 'Timer działa tylko na tym urządzeniu. Nic nie jest wysyłane.',
+      modeHostHint: 'Nadaje stan timera do wszystkich urządzeń w trybie Klient (wymaga hasła).',
+      modeClientHint: 'Widok tylko-do-odczytu timera hosta — bez ustawień, bez przycisków.',
+      labelInvite: 'Zaproś klientów',
+      inviteHint: 'Zeskanuj QR aby dołączyć jako klient',
+      btnCopy: 'Kopiuj',
+      btnCopied: 'Skopiowano',
     },
     en: {
       modeGame: 'Game',
@@ -109,6 +145,25 @@
       soundWhistle: 'Whistle',
       soundSiren: 'Siren',
       titleSuffix: 'Goalkeeper Timer',
+      labelMode: 'Mode',
+      modeLocal: 'Local',
+      modeHost: 'Host',
+      modeClient: 'Client',
+      badgeHosting: 'Broadcasting',
+      badgeViewing: 'Viewing',
+      btnExit: 'Exit',
+      btnCancel: 'Cancel',
+      btnOk: 'OK',
+      hostPasswordTitle: 'Host password',
+      hostPasswordHint: 'Enter password to enable Host mode.',
+      hostPasswordWrong: 'Wrong password.',
+      modeLocalHint: 'Timer runs only on this device. Nothing is broadcast.',
+      modeHostHint: 'Broadcasts timer state to every Client device (password required).',
+      modeClientHint: 'Read-only view of host timer — no settings, no buttons.',
+      labelInvite: 'Invite clients',
+      inviteHint: 'Scan the QR to join as a client',
+      btnCopy: 'Copy',
+      btnCopied: 'Copied',
     },
   };
 
@@ -123,7 +178,13 @@
       const key = el.getAttribute('data-i18n');
       if (key) el.textContent = t(key);
     });
-    if (langLabel) langLabel.textContent = state.lang.toUpperCase();
+    document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+      const key = el.getAttribute('data-i18n-title');
+      if (key) el.setAttribute('title', t(key));
+    });
+    const otherLang = state.lang === 'pl' ? 'EN' : 'PL';
+    if (langLabel) langLabel.textContent = otherLang;
+    updateModeUI();
     render();
   }
 
@@ -153,6 +214,269 @@
       lang: state.lang,
     };
     try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
+  }
+
+  // ---------- Firebase realtime (Host / Client) ----------
+  let fbApp = null;
+  let fbDb = null;
+  let stateRef = null;
+  let presenceRef = null;
+  let clientsRef = null;
+  let clientEntryRef = null;
+  let clientsListener = null;
+  let unsubscribeState = null;
+  let serverTimeOffset = 0;
+  let suppressPublish = false;
+
+  function now() { return Date.now() + serverTimeOffset; }
+
+  function ensureFirebase() {
+    if (fbApp) return fbApp;
+    if (typeof firebase === 'undefined' || !window.__FIREBASE_CONFIG__) return null;
+    try {
+      fbApp = firebase.initializeApp(window.__FIREBASE_CONFIG__);
+      fbDb = firebase.database();
+      stateRef = fbDb.ref('session/state');
+      presenceRef = fbDb.ref('session/hostPresence');
+      clientsRef = fbDb.ref('session/clients');
+      fbDb.ref('.info/serverTimeOffset').on('value', (snap) => {
+        serverTimeOffset = snap.val() || 0;
+      });
+      return fbApp;
+    } catch (err) {
+      console.warn('[firebase] init failed:', err);
+      return null;
+    }
+  }
+
+  function publishState() {
+    if (state.mode !== 'host' || !stateRef) return;
+    const payload = {
+      running: !!state.running,
+      endAt: state.running ? state.endAt : null,
+      remainingMs: state.remainingMs,
+      duration: state.duration,
+      warnSec: state.warnSec,
+      sound: state.sound,
+      rotation: state.rotation,
+      finished: !!state.finished,
+      hostAt: firebase.database.ServerValue.TIMESTAMP,
+    };
+    stateRef.set(payload).catch((err) => console.warn('[firebase] publish:', err));
+  }
+
+  function applyRemoteState(s) {
+    if (!s) return;
+    suppressPublish = true;
+    try {
+      if (SOUNDS[s.sound]) state.sound = s.sound;
+      if (Number.isFinite(s.duration) && s.duration > 0) state.duration = s.duration;
+      if (Number.isFinite(s.warnSec) && s.warnSec > 0) state.warnSec = s.warnSec;
+      if (Number.isFinite(s.rotation)) state.rotation = s.rotation;
+      const wasRunning = state.running;
+      const wasFinished = state.finished;
+      state.finished = !!s.finished;
+
+      if (s.running && Number.isFinite(s.endAt)) {
+        state.running = true;
+        state.endAt = s.endAt;
+        state.remainingMs = Math.max(0, s.endAt - now());
+        state.warnedAt = state.remainingMs / 1000 <= state.warnSec ? now() : null;
+        if (!wasRunning) {
+          ensureAudio();
+          state.rafId = requestAnimationFrame(tick);
+        }
+      } else {
+        state.running = false;
+        cancelAnimationFrame(state.rafId);
+        state.remainingMs = Number.isFinite(s.remainingMs) ? s.remainingMs : state.duration * 1000;
+      }
+
+      if (state.finished && !wasFinished) {
+        timerCard.classList.remove('flash');
+        void timerCard.offsetWidth;
+        timerCard.classList.add('flash');
+        vibrate([500, 100, 500]);
+      }
+
+      minutesInput.value = String(Math.floor(state.duration / 60));
+      secondsInput.value = String(state.duration % 60);
+      warnInput.value = String(state.warnSec);
+      soundSelect.value = state.sound;
+      updatePresetActive();
+      render();
+    } finally {
+      suppressPublish = false;
+    }
+  }
+
+  function subscribeAsClient() {
+    if (!stateRef) return;
+    unsubscribeClient();
+    unsubscribeState = stateRef.on('value', (snap) => applyRemoteState(snap.val()));
+  }
+
+  function unsubscribeClient() {
+    if (stateRef && unsubscribeState) {
+      stateRef.off('value', unsubscribeState);
+      unsubscribeState = null;
+    }
+  }
+
+  function setHostPresence(online) {
+    if (!presenceRef) return;
+    if (online) {
+      presenceRef.set({ online: true, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+      presenceRef.onDisconnect().set({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+    } else {
+      presenceRef.set({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+      presenceRef.onDisconnect().cancel();
+    }
+  }
+
+  function registerClientPresence() {
+    if (!clientsRef || clientEntryRef) return;
+    clientEntryRef = clientsRef.push();
+    clientEntryRef.set({ joinedAt: firebase.database.ServerValue.TIMESTAMP });
+    clientEntryRef.onDisconnect().remove();
+  }
+
+  function unregisterClientPresence() {
+    if (!clientEntryRef) return;
+    try { clientEntryRef.onDisconnect().cancel(); } catch { /* ignore */ }
+    clientEntryRef.remove().catch(() => {});
+    clientEntryRef = null;
+  }
+
+  function subscribeClientCount() {
+    if (!clientsRef || clientsListener) return;
+    clientsListener = clientsRef.on('value', (snap) => {
+      if (clientCountEl) clientCountEl.textContent = String(snap.numChildren() || 0);
+    });
+  }
+
+  function unsubscribeClientCount() {
+    if (clientsRef && clientsListener) {
+      clientsRef.off('value', clientsListener);
+      clientsListener = null;
+    }
+    if (clientCountEl) clientCountEl.textContent = '0';
+  }
+
+  function buildClientUrl() {
+    const url = new URL(window.location.href);
+    url.search = '?mode=client';
+    url.hash = '';
+    return url.toString();
+  }
+
+  function generateInviteQR() {
+    if (!qrContainer) return;
+    const clientUrl = buildClientUrl();
+    if (inviteUrl) inviteUrl.value = clientUrl;
+    if (typeof window.qrcode === 'function') {
+      try {
+        const qr = window.qrcode(0, 'M');
+        qr.addData(clientUrl);
+        qr.make();
+        qrContainer.innerHTML = qr.createSvgTag({ margin: 2, scalable: true });
+      } catch (err) {
+        console.warn('[qr] generation failed:', err);
+        qrContainer.textContent = clientUrl;
+      }
+    } else {
+      qrContainer.textContent = clientUrl;
+    }
+  }
+
+  function updateModeUI() {
+    document.body.classList.toggle('host-mode', state.mode === 'host');
+    document.body.classList.toggle('client-mode', state.mode === 'client');
+    if (modeBadge) {
+      modeBadge.classList.remove('badge-local', 'badge-host', 'badge-client');
+      modeBadge.classList.add('badge-' + state.mode);
+    }
+    if (modeBadgeText) {
+      const key = state.mode === 'host' ? 'modeHost'
+                : state.mode === 'client' ? 'modeClient'
+                : 'modeLocal';
+      modeBadgeText.textContent = t(key);
+    }
+    if (hostInvite) hostInvite.hidden = state.mode !== 'host';
+    if (state.mode === 'client') {
+      document.body.classList.add('focus-mode');
+    }
+    modeChips.forEach((c) => c.classList.toggle('active', c.dataset.mode === state.mode));
+  }
+
+  function enterMode(newMode) {
+    if (state.mode === newMode) return;
+
+    // Tear down previous mode
+    if (state.mode === 'host') {
+      setHostPresence(false);
+      unsubscribeClientCount();
+    }
+    if (state.mode === 'client') {
+      unsubscribeClient();
+      unregisterClientPresence();
+      // Reset visible timer so a stale broadcast state doesn't linger.
+      cancelAnimationFrame(state.rafId);
+      state.running = false;
+      state.finished = false;
+      state.remainingMs = state.duration * 1000;
+    }
+
+    state.mode = newMode;
+    try { localStorage.setItem(MODE_KEY, newMode); } catch { /* ignore */ }
+
+    // Set up new mode
+    if (newMode === 'host' || newMode === 'client') {
+      if (!ensureFirebase()) {
+        console.warn('[firebase] not available; falling back to local mode');
+        state.mode = 'local';
+        try { localStorage.setItem(MODE_KEY, 'local'); } catch { /* ignore */ }
+      }
+    }
+
+    if (state.mode === 'host') {
+      setHostPresence(true);
+      publishState();
+      generateInviteQR();
+      subscribeClientCount();
+    } else if (state.mode === 'client') {
+      ensureAudio();
+      subscribeAsClient();
+      registerClientPresence();
+    }
+
+    updateModeUI();
+    render();
+  }
+
+  function openPasswordModal() {
+    if (!passwordModal) return;
+    passwordModal.hidden = false;
+    if (passwordError) passwordError.hidden = true;
+    if (passwordInput) {
+      passwordInput.value = '';
+      setTimeout(() => passwordInput.focus(), 30);
+    }
+  }
+
+  function closePasswordModal() {
+    if (passwordModal) passwordModal.hidden = true;
+  }
+
+  function submitPassword() {
+    const val = passwordInput ? passwordInput.value.trim() : '';
+    if (val === HOST_PASSWORD) {
+      closePasswordModal();
+      enterMode('host');
+    } else {
+      if (passwordError) passwordError.hidden = false;
+      if (passwordInput) passwordInput.select();
+    }
   }
 
   // ---------- Audio ----------
@@ -395,13 +719,13 @@
   // ---------- Loop ----------
   function tick(ts) {
     if (!state.running) return;
-    const now = performance.now();
-    state.remainingMs = Math.max(0, state.endAt - now);
+    const t = now();
+    state.remainingMs = Math.max(0, state.endAt - t);
 
     // Warning sound: trigger once when we cross into the warning window
     const secLeft = state.remainingMs / 1000;
     if (!state.warnedAt && secLeft > 0 && secLeft <= state.warnSec + 0.05) {
-      state.warnedAt = now;
+      state.warnedAt = t;
       const wholeSecondsLeft = Math.max(1, Math.ceil(secLeft));
       playWarningSequence(wholeSecondsLeft);
     }
@@ -415,25 +739,28 @@
   }
 
   function start() {
+    if (state.mode === 'client') return;
     if (state.running) return;
     if (state.finished) resetTimer(false);
     ensureAudio();
-    // Prime vibration in the same user gesture so scheduled patterns work on mobile.
     if (canVibrate()) { try { navigator.vibrate(1); } catch { /* ignore */ } }
     state.running = true;
-    state.endAt = performance.now() + state.remainingMs;
+    state.endAt = now() + state.remainingMs;
     if (state.remainingMs > state.warnSec * 1000) state.warnedAt = null;
     requestWakeLock();
     state.rafId = requestAnimationFrame(tick);
     render();
+    publishState();
   }
 
   function pause() {
+    if (state.mode === 'client') return;
     if (!state.running) return;
     state.running = false;
     cancelAnimationFrame(state.rafId);
     releaseWakeLock();
     render();
+    publishState();
   }
 
   function toggleStartPause() {
@@ -441,6 +768,7 @@
   }
 
   function finish() {
+    if (state.finished) return;
     state.running = false;
     state.finished = true;
     state.remainingMs = 0;
@@ -455,6 +783,10 @@
 
     render();
 
+    if (state.mode === 'client') return; // host drives the reset+start
+
+    publishState();
+
     if (autoRestartInput.checked) {
       setTimeout(() => {
         resetTimer(false);
@@ -466,6 +798,7 @@
   }
 
   function resetTimer(fullReset = true) {
+    if (state.mode === 'client') return;
     cancelAnimationFrame(state.rafId);
     state.running = false;
     state.finished = false;
@@ -474,10 +807,11 @@
     if (fullReset) state.rotation = 0;
     releaseWakeLock();
     render();
+    publishState();
   }
 
   function nextRotation() {
-    // Manually end current rotation
+    if (state.mode === 'client') return;
     cancelAnimationFrame(state.rafId);
     const wasRunning = state.running;
     state.running = false;
@@ -487,6 +821,7 @@
     state.rotation += 1;
     render();
     if (wasRunning) start();
+    else publishState();
   }
 
   // ---------- Inputs ----------
@@ -497,6 +832,7 @@
   }
 
   function applyDuration(seconds, { fromPreset = false } = {}) {
+    if (state.mode === 'client') return;
     state.duration = seconds;
     minutesInput.value = String(Math.floor(seconds / 60));
     secondsInput.value = String(seconds % 60);
@@ -507,6 +843,7 @@
     updatePresetActive(fromPreset ? seconds : null);
     saveSettings();
     render();
+    publishState();
   }
 
   function updatePresetActive(matchSeconds) {
@@ -526,6 +863,7 @@
     warnInput.value = String(w);
     state.warnSec = w;
     saveSettings();
+    publishState();
   });
 
   presetBtns.forEach((btn) => {
@@ -551,6 +889,54 @@
       state.sound = soundSelect.value;
       saveSettings();
       updateSoundStatus();
+      publishState();
+    }
+  });
+
+  modeChips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const target = chip.dataset.mode;
+      if (target === state.mode) return;
+      if (target === 'host') openPasswordModal();
+      else if (target === 'local' || target === 'client') enterMode(target);
+    });
+  });
+
+  copyUrlBtn && copyUrlBtn.addEventListener('click', async () => {
+    if (!inviteUrl) return;
+    const url = inviteUrl.value;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      inviteUrl.select();
+      try { document.execCommand('copy'); } catch { /* ignore */ }
+    }
+    copyUrlBtn.classList.add('copied');
+    copyUrlBtn.textContent = t('btnCopied');
+    setTimeout(() => {
+      copyUrlBtn.classList.remove('copied');
+      copyUrlBtn.textContent = t('btnCopy');
+    }, 1500);
+  });
+
+  passwordSubmit && passwordSubmit.addEventListener('click', submitPassword);
+  passwordCancel && passwordCancel.addEventListener('click', closePasswordModal);
+  passwordInput && passwordInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submitPassword(); }
+    else if (e.key === 'Escape') { e.preventDefault(); closePasswordModal(); }
+  });
+
+  // Fallback exit gesture in Client mode: 5 rapid taps on the timer.
+  let clientTapTimes = [];
+  timerCard && timerCard.addEventListener('click', () => {
+    if (state.mode !== 'client') return;
+    const t0 = Date.now();
+    clientTapTimes = clientTapTimes.filter((t) => t0 - t < 2000);
+    clientTapTimes.push(t0);
+    if (clientTapTimes.length >= 5) {
+      clientTapTimes = [];
+      document.body.classList.remove('focus-mode');
+      enterMode('local');
     }
   });
 
@@ -569,6 +955,14 @@
   });
 
   fullscreenBtn.addEventListener('click', async () => {
+    if (state.mode === 'client') {
+      document.body.classList.remove('focus-mode');
+      enterMode('local');
+      if (document.fullscreenElement) {
+        try { await document.exitFullscreen(); } catch { /* ignore */ }
+      }
+      return;
+    }
     const entering = !document.body.classList.contains('focus-mode');
     document.body.classList.toggle('focus-mode', entering);
     try {
@@ -587,6 +981,13 @@
   window.addEventListener('keydown', (e) => {
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    if (state.mode === 'client') {
+      if (e.key === 'Escape') {
+        document.body.classList.remove('focus-mode');
+        enterMode('local');
+      }
+      return;
+    }
     if (e.code === 'Space') { e.preventDefault(); toggleStartPause(); }
     else if (e.key === 'r' || e.key === 'R') resetTimer(true);
     else if (e.key === 'n' || e.key === 'N') nextRotation();
@@ -595,6 +996,13 @@
 
   // ---------- Init ----------
   loadSettings();
+  try {
+    const savedMode = localStorage.getItem(MODE_KEY);
+    if (savedMode === 'host' || savedMode === 'client') state.mode = savedMode;
+  } catch { /* ignore */ }
+  // URL ?mode=client overrides everything else — for QR-based join links.
+  const urlMode = new URLSearchParams(window.location.search).get('mode');
+  if (urlMode === 'client') state.mode = 'client';
   minutesInput.value = String(Math.floor(state.duration / 60));
   secondsInput.value = String(state.duration % 60);
   warnInput.value = String(state.warnSec);
@@ -604,4 +1012,13 @@
   updatePresetActive();
   applyTranslations();
   fetchSamples();
+
+  // Apply persisted mode after everything else is wired up.
+  if (state.mode === 'host' || state.mode === 'client') {
+    const persisted = state.mode;
+    state.mode = 'local';
+    setTimeout(() => enterMode(persisted), 0);
+  } else {
+    updateModeUI();
+  }
 })();

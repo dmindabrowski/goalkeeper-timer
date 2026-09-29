@@ -1,142 +1,119 @@
-# Timer zmiany bramkarza — PWA
+# Goalkeeper Timer
 
-Minimalistyczna aplikacja webowa (PWA) do odmierzania czasu zmiany na bramce podczas gry w piłkę. Instaluje się na iPhone bez App Store ani konta developerskiego.
+A minimalist PWA for timing goalkeeper rotations during football practice or matches. Runs entirely in the browser, works offline once installed, and optionally syncs the timer across multiple devices in real time.
 
----
-
-## Szybki start (lokalnie na Macu)
-
-```bash
-cd goalkeeper-timer
-python3 -m http.server 8000
-```
-
-Otwórz w przeglądarce: http://localhost:8000
+**Live app:** [dmindabrowski.github.io/goalkeeper-timer](https://dmindabrowski.github.io/goalkeeper-timer/)
 
 ---
 
-## Instalacja na iPhone (3 opcje)
+## Features
 
-### Opcja A — Publiczny HTTPS (zalecane, działa offline) ⭐
+- **Countdown timer** with progress ring and large digits
+- **Configurable duration** (`0:15`, `2:00`, `3:00`, `5:00`, `6:00` presets or custom)
+- **End-of-rotation warning** — sample-based sound (Alarm / Whistle / Siren) starts 1–30 s before zero
+- **Auto-restart** the next rotation after each finish
+- **Rotation counter** for the session
+- **Wake Lock** — screen stays on during the countdown (iOS 16.4+)
+- **Vibration** on Android (iOS Safari does not expose the Vibration API)
+- **Game mode** — fullscreen, oversized timer for players on the field
+- **Bilingual UI** — Polish and English (`localStorage` persisted)
+- **PWA** — installable on iOS, Android, and desktop; works offline
 
-PWA na iOS wymaga **HTTPS**, żeby zapisać się jako pełnoprawna aplikacja offline. Najprościej:
+### Three modes
 
-**1. Wrzuć folder na darmowy hosting statyczny:**
+| Mode | Description |
+| --- | --- |
+| **Local** | Timer runs only on this device. No network required. |
+| **Host** | Broadcasts timer state to all connected clients (password `dd`). Shows a QR invite and a live client counter. |
+| **Client** | Read-only fullscreen mirror of a Host's timer. All sound and visual cues fire locally. |
 
-- **Netlify Drop** — wejdź na https://app.netlify.com/drop i przeciągnij folder `goalkeeper-timer/` w okno przeglądarki. Dostajesz adres typu `https://twoja-nazwa.netlify.app` w 30 sekund.
-- **Vercel** — `npx vercel` w folderze, potem `Enter × kilka`.
-- **GitHub Pages** — wrzuć folder do repo, włącz Pages w ustawieniach.
-- **Cloudflare Pages** — połącz z repo, gotowe.
-
-**2. Otwórz adres w Safari na iPhonie** (Chrome nie zadziała — musi być Safari).
-
-**3. Wybierz:** przycisk **Udostępnij** (kwadrat ze strzałką w górę) → **„Do ekranu początkowego"** → **Dodaj**.
-
-Ikona pojawi się na ekranie startowym. Odpalona z ikony aplikacja działa w trybie pełnoekranowym (bez paska Safari), pamięta ustawienia, **działa offline** — bez internetu, bez serwera.
-
-### Opcja B — Tunel HTTPS z Twojego Maca (do testów)
-
-Zamiast hostingu możesz udostępnić lokalny serwer przez tunel HTTPS:
-
-```bash
-# terminal 1
-python3 -m http.server 8000
-
-# terminal 2 (jednorazowo: brew install cloudflared)
-cloudflared tunnel --url http://localhost:8000
-```
-
-Dostaniesz adres `https://xyz.trycloudflare.com` — otwórz go w Safari na iPhonie i dodaj do ekranu początkowego. Uwaga: adres wygasa po zamknięciu tunelu.
-
-Alternatywnie: `ngrok http 8000`.
-
-### Opcja C — LAN bez HTTPS (najprościej, ale bez offline)
-
-Jeśli iPhone jest w tej samej sieci WiFi co Mac:
-
-```bash
-# sprawdź IP Maca
-ipconfig getifaddr en0
-
-# uruchom serwer nasłuchujący na wszystkich interfejsach
-python3 -m http.server 8000 --bind 0.0.0.0
-```
-
-Na iPhonie w Safari otwórz `http://IP-MACA:8000` (np. `http://192.168.1.15:8000`). Możesz dodać do ekranu początkowego — aplikacja będzie działać jak natywna, ale **tylko gdy Mac jest włączony i w tej samej sieci** (service worker nie zarejestruje się bez HTTPS, więc nie ma offline).
+Host ↔ Client sync uses [Firebase Realtime Database](https://firebase.google.com/docs/database). Clients can join by scanning the QR code shown on the host screen (opens `?mode=client` in Safari and auto-enters Client mode).
 
 ---
 
-## Funkcje
-
-- **Odliczanie w dół** z pierścieniem postępu i dużym cyferblatem
-- **Start / Pauza / Reset / Następna zmiana**
-- **Konfigurowalny czas zmiany** (min + sek) i presety: 2, 3, 5, 7, 10 min
-- **Sygnał dźwiękowy** — sekwencja pipów przed końcem (1–30 s) + finalny ton
-- **Auto-restart** kolejnej zmiany po skończeniu odliczania
-- **Wibracje** (na iPhone niedostępne — iOS Safari nie obsługuje Vibration API; zostaje dźwięk)
-- **Wake Lock** — ekran nie zaśnie w trakcie meczu (iOS 16.4+)
-- **Licznik zmian** w sesji
-- **Zapamiętywanie ustawień** w `localStorage`
-- **Tryb offline** — po instalacji jako PWA działa bez sieci
-- **Skróty klawiaturowe** (na desktopie): `Spacja` start/pauza, `R` reset, `N` następna, `F` pełny ekran
-- **Motyw jasny/ciemny** — automatycznie wg systemu
-
----
-
-## Struktura projektu
+## Repository structure
 
 ```
 goalkeeper-timer/
-├── index.html              # UI + meta-tagi iOS/PWA
-├── styles.css              # Motyw i layout
-├── app.js                  # Logika timera
-├── sw.js                   # Service Worker (offline cache)
-├── manifest.webmanifest    # Manifest PWA
-├── icon.svg                # Źródłowa ikona (edytowalna)
-├── generate-icons.py       # Skrypt do regeneracji PNG
+├── index.html              UI markup, PWA meta tags, SDK loading
+├── styles.css              Layout, theming, responsive rules
+├── app.js                  Timer logic, i18n, Firebase sync, QR
+├── sw.js                   Service Worker — offline cache
+├── manifest.webmanifest    PWA manifest (name, icons, colors)
+├── firebase-config.js      Firebase project config (public API key)
+├── icon.svg                Source icon (edit and re-render)
+├── generate-icons.py       Regenerate PNG icons from icon.svg
 ├── icons/
-│   ├── apple-touch-icon.png    # 180×180 — dla iOS
-│   ├── icon-192.png            # 192×192 — PWA
-│   ├── icon-512.png            # 512×512 — PWA
-│   └── icon-maskable-512.png   # 512×512 — maskowana
-└── README.md
+│   ├── apple-touch-icon.png    180×180 — iOS home screen
+│   ├── icon-192.png            192×192 — PWA
+│   ├── icon-512.png            512×512 — PWA
+│   └── icon-maskable-512.png   512×512 — Android maskable
+└── sounds/
+    ├── alarm.m4a           End-of-rotation sample (Alarm)
+    ├── gwizdek.m4a         End-of-rotation sample (Whistle)
+    └── syrena.m4a          End-of-rotation sample (Siren)
 ```
 
 ---
 
-## Regeneracja ikon (opcjonalnie)
+## Development
 
-Jeśli zmienisz `icon.svg`:
+Any static file server works. From the project root:
 
 ```bash
-pip3 install --user pillow cairosvg
+python3 -m http.server 8000
+```
+
+Then open `http://localhost:8000` in a browser. Service Worker and WebAudio both work on `http://localhost` without HTTPS.
+
+### Regenerating icons
+
+Edit `icon.svg` and run:
+
+```bash
+pip3 install --user pillow
 python3 generate-icons.py
 ```
 
-Jeśli `cairosvg` nie działa (brak `libcairo` na macOS: `brew install cairo`), łatwo podmienić skrypt na wariant "Pillow-only" (rysowanie kształtów bez SVG).
+The script draws the icon programmatically with Pillow and writes all four PNG sizes into `icons/`.
 
 ---
 
-## Uwagi techniczne dla iOS
+## Deployment
 
-- **PWA na iOS** jest obsługiwane od iOS 11.3, pełnowartościowo od 16.4+ (Web Push, Wake Lock, Badging).
-- **Service Worker** rejestruje się tylko przez HTTPS lub `http://localhost` — dlatego dostęp przez LAN IP nie da offline.
-- **Dźwięk** wymaga pierwszej interakcji użytkownika (kliknięcie Start) — WebAudio to obsługuje.
-- **Nie usypiaj ekranu** — po dodaniu do ekranu początkowego iOS trzyma stronę aktywną, a Wake Lock dodatkowo blokuje wygaszanie w trakcie odliczania.
+The project is deployed via **GitHub Pages** from the `main` branch (root folder). Any commit to `main` triggers an automatic rebuild in under a minute.
+
+To use your own hosting instead, upload the folder contents to any static host that serves HTTPS. HTTPS is required for Service Worker registration and Clipboard API.
+
+### Firebase configuration
+
+Host/Client sync requires a Firebase Realtime Database project. Update `firebase-config.js` with your own config object if forking. The database rules used by this app:
+
+```json
+{
+  "rules": {
+    "session": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}
+```
+
+The Web API key in the config file is safe to publish — access control is enforced by these rules.
 
 ---
 
-## Jeżeli chcesz "prawdziwą" natywną aplikację (opcjonalnie)
+## Technical notes
 
-PWA to 99% przypadków — działa jak natywna, kosztuje 0 zł, nie wymaga zatwierdzania. Jeśli mimo to potrzebujesz `.ipa` do App Store / TestFlight:
+- **iOS PWA install** — open the live app in Safari, tap **Share → Add to Home Screen**. Once added, launching from the home-screen icon runs the app fullscreen and works offline (Service Worker caches HTML, CSS, JS, sounds, and icons).
+- **Audio** requires a user gesture to unlock the WebAudio context — a single Start / Play sound press is enough for the whole session.
+- **Firebase SDK** is loaded from `gstatic.com` and skipped by the Service Worker's cache (cross-origin passthrough), so Host/Client modes require internet while Local mode remains fully offline.
+- **Client presence** is tracked with Firebase `onDisconnect().remove()`, giving the host a live count without extra plumbing.
+- **URL query `?mode=client`** auto-enters Client mode on load; `?mode=host` is intentionally not supported (host always prompts for password).
 
-1. Wymagane: **konto Apple Developer** ($99/rok) + macOS + **Xcode**.
-2. Owiń istniejący kod przez **Capacitor**:
-   ```bash
-   npm init -y
-   npm install @capacitor/core @capacitor/cli @capacitor/ios
-   npx cap init "Zmiana GK" com.twojanazwa.zmianagk --web-dir=.
-   npx cap add ios
-   npx cap open ios
-   ```
-3. W Xcode: Signing & Capabilities → wybierz swój Apple ID → uruchom na podłączonym iPhonie (Product → Run).
+---
+
+## License
+
+MIT © Damian Dąbrowski
