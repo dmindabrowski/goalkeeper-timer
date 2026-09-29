@@ -448,6 +448,9 @@
       ensureAudio();
       subscribeAsClient();
       registerClientPresence();
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
     }
 
     updateModeUI();
@@ -667,7 +670,8 @@
 
   // ---------- Wake Lock ----------
   async function requestWakeLock() {
-    if (!wakeLockInput.checked) return;
+    const shouldAcquire = state.mode === 'client' || wakeLockInput.checked;
+    if (!shouldAcquire) return;
     if (!('wakeLock' in navigator)) return;
     try {
       state.wakeLock = await navigator.wakeLock.request('screen');
@@ -681,7 +685,7 @@
     }
   }
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && state.running) requestWakeLock();
+    if (document.visibilityState === 'visible' && (state.running || state.mode === 'client')) requestWakeLock();
   });
 
   // ---------- Rendering ----------
@@ -1002,7 +1006,11 @@
   } catch { /* ignore */ }
   // URL ?mode=client overrides everything else — for QR-based join links.
   const urlMode = new URLSearchParams(window.location.search).get('mode');
-  if (urlMode === 'client') state.mode = 'client';
+  if (urlMode === 'client') {
+    state.mode = 'client';
+    // Set the body classes immediately so nothing else renders before Client view.
+    document.body.classList.add('client-mode', 'focus-mode');
+  }
   minutesInput.value = String(Math.floor(state.duration / 60));
   secondsInput.value = String(state.duration % 60);
   warnInput.value = String(state.warnSec);
