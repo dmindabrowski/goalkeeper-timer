@@ -414,6 +414,8 @@ body.focus-mode .mode-btn .icon-shrink { display: inline-block; }
   padding-top: 8px;
   opacity: 0.75;
 }
+.foot-sep { margin: 0 6px; opacity: 0.6; }
+.foot-version { font-variant-numeric: tabular-nums; opacity: 0.8; }
 
 /* States */
 .state-warn .ring-progress { stroke: var(--warn); filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.5)); }
