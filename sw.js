@@ -1,4 +1,4 @@
-const CACHE = 'gk-timer-v35';
+const CACHE = 'gk-timer-v37';
 const ASSETS = [
   './',
   './index.html',

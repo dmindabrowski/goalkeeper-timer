@@ -22,6 +22,7 @@
   const langBtn = $('langBtn');
   const langLabel = $('langLabel');
   const copyYear = $('copyYear');
+  const appVersion = $('appVersion');
   const modeBadge = $('modeBadge');
   const modeBadgeText = $('modeBadgeText');
   const passwordModal = $('passwordModal');
@@ -40,6 +41,7 @@
 
   const HOST_PASSWORD = 'dd';
   const MODE_KEY = 'gk-timer-mode-v1';
+  const APP_VERSION = '1.1.1';
 
   const RING_CIRC = 2 * Math.PI * 92; // 578.05
   ringEl.style.strokeDasharray = String(RING_CIRC);
@@ -436,6 +438,8 @@
         console.warn('[firebase] not available; falling back to local mode');
         state.mode = 'local';
         try { localStorage.setItem(MODE_KEY, 'local'); } catch { /* ignore */ }
+        // Client-mode init may have pre-applied focus-mode; clear it on fallback.
+        document.body.classList.remove('focus-mode');
       }
     }
 
@@ -1024,18 +1028,25 @@
   warnInput.value = String(state.warnSec);
   soundSelect.value = state.sound;
   if (copyYear) copyYear.textContent = String(new Date().getFullYear());
+  if (appVersion) appVersion.textContent = APP_VERSION;
   state.remainingMs = state.duration * 1000;
   updatePresetActive();
   applyTranslations();
   fetchSamples();
 
-  // Firebase compat scripts load via defer — wait one tick so ensureFirebase() finds them.
+  // Firebase compat scripts load via defer/CDN — wait until they're ready before entering Host/Client.
   if (initialMode === 'host' || initialMode === 'client') {
-    setTimeout(() => {
-      // Bypass enterMode's identity guard so setup actually runs.
-      state.mode = 'local';
-      enterMode(initialMode);
-    }, 0);
+    const bootstrapMode = (tries = 0) => {
+      const ready = typeof firebase !== 'undefined' && !!window.__FIREBASE_CONFIG__;
+      if (ready || tries > 40) {
+        // Bypass enterMode's identity guard so setup actually runs.
+        state.mode = 'local';
+        enterMode(initialMode);
+        return;
+      }
+      setTimeout(() => bootstrapMode(tries + 1), 100);
+    };
+    bootstrapMode();
   } else {
     updateModeUI();
   }
