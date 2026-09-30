@@ -1000,17 +1000,25 @@
 
   // ---------- Init ----------
   loadSettings();
-  try {
-    const savedMode = localStorage.getItem(MODE_KEY);
-    if (savedMode === 'host' || savedMode === 'client') state.mode = savedMode;
-  } catch { /* ignore */ }
-  // URL ?mode=client overrides everything else — for QR-based join links.
+
+  // URL ?mode=client takes priority over persisted mode — QR/deep-link join must win.
   const urlMode = new URLSearchParams(window.location.search).get('mode');
+  let initialMode = 'local';
   if (urlMode === 'client') {
-    state.mode = 'client';
-    // Set the body classes immediately so nothing else renders before Client view.
-    document.body.classList.add('client-mode', 'focus-mode');
+    initialMode = 'client';
+  } else {
+    try {
+      const savedMode = localStorage.getItem(MODE_KEY);
+      if (savedMode === 'host' || savedMode === 'client') initialMode = savedMode;
+    } catch { /* ignore */ }
   }
+  state.mode = initialMode;
+  if (initialMode === 'client') {
+    document.body.classList.add('client-mode', 'focus-mode');
+  } else if (initialMode === 'host') {
+    document.body.classList.add('host-mode');
+  }
+
   minutesInput.value = String(Math.floor(state.duration / 60));
   secondsInput.value = String(state.duration % 60);
   warnInput.value = String(state.warnSec);
@@ -1021,11 +1029,13 @@
   applyTranslations();
   fetchSamples();
 
-  // Apply persisted mode after everything else is wired up.
-  if (state.mode === 'host' || state.mode === 'client') {
-    const persisted = state.mode;
-    state.mode = 'local';
-    setTimeout(() => enterMode(persisted), 0);
+  // Firebase compat scripts load via defer — wait one tick so ensureFirebase() finds them.
+  if (initialMode === 'host' || initialMode === 'client') {
+    setTimeout(() => {
+      // Bypass enterMode's identity guard so setup actually runs.
+      state.mode = 'local';
+      enterMode(initialMode);
+    }, 0);
   } else {
     updateModeUI();
   }
